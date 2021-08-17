@@ -22,7 +22,7 @@ def chunk(filepath, chunksize = 100000, use_threads = False) :
     stop = chunksize
     for x in range(0, num_row_groups, chunksize) :
         which = np.arange(start, stop)
-        yield ak.from_parquet(filepath, columns = ["jet_pt", "jet_mask"], use_threads = True, row_groups = which)
+        yield ak.from_parquet(filepath, columns = ["jet_pt", "jet_mask"], use_threads = False, row_groups = which)
         start = x
         stop = start + chunksize
 
@@ -64,8 +64,18 @@ def main() :
 
     ##
     ## some awkward array stuff
-    ##
-    for iarr, arr in enumerate(chunk(p, 1000, True)) :
+    #
+    #arr = ak.from_parquet(p, columns = ["jet_pt", "jet_mask"], use_threads = True)#, row_groups = which)
+    #print(arr)
+    #for x in arr :
+    #n_jets = x["jet_n"]
+    #jpt = arr["jet_pt"][arr["jet_mask"]]
+    #print(jpt)
+    ##print(x["jet_pt"])
+    ##print(x["jet_pt"][~np.isnan(x["jet_pt"])])
+    #sys.exit()
+
+    for iarr, arr in enumerate(chunk(p, 100, True)) :
         print(55 * "-")
         print(f" iarr = {iarr}, arr len = {len(arr)}")
         #print(arr)

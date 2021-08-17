@@ -287,7 +287,7 @@ class DatasetGenerator {
             
 
             std::shared_ptr<arrow::Table> table = arrow::Table::Make(_schema, arrays);
-            PARQUET_THROW_NOT_OK(_writer->WriteTable(*table, array->length()));
+            PARQUET_THROW_NOT_OK(_writer->WriteTable(*table, 1));
 
             _event_count++;
 
@@ -423,7 +423,7 @@ void write_parquet_file(const arrow::Table& table) {
   // the parquet file. Normally you would choose this to be rather large but
   // for the example, we use a small value to have multiple RowGroups.
   //auto writer_props = parquet::default_writer_properties();
-  auto writer_props = parquet::WriterProperties::Builder().compression(arrow::Compression::UNCOMPRESSED)->build();
+  auto writer_props = parquet::WriterProperties::Builder().compression(arrow::Compression::GZIP)->build();
   auto arrow_props = parquet::ArrowWriterProperties::Builder().store_schema()->build();
   PARQUET_THROW_NOT_OK(
       parquet::arrow::WriteTable(table,
