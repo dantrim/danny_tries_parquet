@@ -51,7 +51,7 @@ def job_loop(parquet_file, chunk_size = 1000, use_threads = True, columns = None
         for ichunk, chunk in enumerate(chunkgen(file, chunk_size, use_threads = use_threads, columns = columns)) :
             n_total += len(chunk)
             pass
-    print(f"n events = {n_total}")
+    print(f"n events = {n_total} processed")
 """
 
 def main() :
@@ -67,8 +67,6 @@ def main() :
     if not Path(args.input_file).exists() :
         raise Exception(f"ERROR Input file {args.input_file} not found")
 
-    #pf = pq.ParquetFile(args.input_file)
-
     columns_to_read = None
     if args.n_columns > 0 :
         pf = pq.ParquetDataset(args.input_file)
@@ -83,15 +81,8 @@ def main() :
 job_loop('{args.input_file}', chunk_size = {args.chunk_size}, use_threads = {args.threads}, columns = {columns_to_read})
 """
 
-    #job_loop(args.input_file, args.chunk_size, use_threads = args.threads)
-    #print(timeit.timeit(CODE_TO_RUN, setup=SETUP, number = 1, repeat = 5))
     repeats = np.array(timeit.repeat(CODE_TO_RUN, setup=SETUP, number = 1, repeat = args.repeats))
     print(f"Average of {args.repeats} trials: {np.mean(repeats):.5f} +/- {np.std(repeats):.5f} seconds")
-
-
-    
-
-
 
 if __name__ == "__main__" :
     main()
