@@ -51,7 +51,6 @@ def job_loop(parquet_file, chunk_size = 1000, use_threads = True, columns = None
         for ichunk, chunk in enumerate(chunkgen(file, chunk_size, use_threads = use_threads, columns = columns)) :
             n_total += len(chunk)
             pass
-            #jpt = chunk["jet_pt"]
     print(f"n events = {n_total}")
 """
 
