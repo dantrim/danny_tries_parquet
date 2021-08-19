@@ -21,6 +21,7 @@ $ ./gen-dataset
 Which will generate a single-file Parquet dataset `dataset_gen/dummy_0.parquet`.
 
 Additional options can be given to `gen-dataset` by specifing the `-h|--help` option, `./gen-dataset -h`.
+
 You can specify the number of events to generate, the compression algorithm (`UNCOMPRESSED`, `SNAPPY`, or `GZIP`),
 and other things like the number of events to store per RowGroup in the output Parquet file.
 The latter specification of the RowGroup size will have noticeable impact on the write speed.
