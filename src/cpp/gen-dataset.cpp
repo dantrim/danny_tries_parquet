@@ -43,12 +43,12 @@ int main(int argc, char* argv[]) {
     }
 
     uint32_t count_rate = 100;
-    if(n_events >= 5000) {
-        count_rate = 1000;
+    if(n_events >= 500000) {
+        count_rate = 50000;
     } else if(n_events >= 100000) {
         count_rate = 10000;
-    } else {
-        count_rate = 50000;
+    } else if(n_events >= 5000) {
+        count_rate = 1000;
     }
     DatasetGenerator ds(row_group_size);
     ds.init(dataset_name, outdir, compression);
