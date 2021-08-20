@@ -51,8 +51,8 @@ read from disk at a time in each iteration. The number of row-groups to chunk by
 during the read process can be specified by the `-c|--chunk-size` option.
 A typical example run could be,
 ```
-$ python test-parquet.py --repeats 100 -c 100000
-Average of 100 trials: 0.01263 +/- 0.00100 seconds # for a 1_000_000 event dataset
+$ python test-parquet.py --repeats 100 -c 10000
+Average of 100 trials: 0.00719 +/- 0.00044 seconds # for a 1_000_000 event dataset
 ```
 
 ## Getting Arrow+Parquet
