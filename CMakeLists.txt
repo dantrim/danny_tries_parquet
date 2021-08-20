@@ -17,6 +17,9 @@ target_include_directories(dataset_generator PUBLIC ${ARROW_INCLUDE_DIR} ${PARQU
 
 add_executable(gen-dataset src/cpp/gen-dataset.cpp)
 target_link_libraries(gen-dataset dataset_generator)
+add_executable(write-struct src/cpp/write-struct.cpp)
+target_link_libraries(write-struct ${ARROW_SHARED_LIB} ${PARQUET_SHARED_LIB})
+target_include_directories(write-struct PRIVATE ${ARROW_INCLUDE_DIR} ${PARQUET_INCLUDE_DIR} src/cpp)
 
 #add_executable(parquet-test src/cpp/parquet-test.cpp)
 #target_link_libraries(parquet-test ${ARROW_SHARED_LIB} ${PARQUET_SHARED_LIB})
