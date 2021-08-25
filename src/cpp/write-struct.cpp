@@ -415,7 +415,7 @@ std::map<std::string, arrow::ArrayBuilder*>& out_map) {
 			bool child_is_nested = (child_builder->num_children() > 0);
 			bool child_is_list = (child_type->id() == arrow::Type::LIST);
 			if(child_is_nested) {
-				std::string this_name = parentname + "/" + field->name() + "/";
+				std::string this_name = parentname + "/" + field->name();// + "/";
 				out_map[this_name] = child_builder;
 
 				std::string child_name = parentname + "/" + field->name();
@@ -1378,8 +1378,9 @@ std::shared_ptr<arrow::Table> generate_table4(const json& jlayout) {
 		fill2("col3", col_builder_map.at("col3"), {structlist_data});
 
 		// col4
-		filler_vec struct_data{1, floatval};
+		filler_vec struct_data{1, floatval, intvec_vals};
 		fill2("col4", col_builder_map.at("col4"), {struct_data});
+		fill2("col4/s4", col_builder_map.at("col4"), {structlist_data.at(0)});
 	}
 
 	std::vector<std::shared_ptr<arrow::Array>> array_vec;
@@ -1435,10 +1436,24 @@ int main(int argc, char* argv[]) {
 				{ "name": "col3", "type": "list", "of" : 
 					[{ "name" : "foo", "type": "int"}, {"name" : "bar", "type": "float"}] 
 				},
-				{ "name": "col4", "type": [ { "name" : "s0", "type": "int" }, { "name" : "s1", "type": "float"} ] }
+				{ "name": "col4", "type": [ { "name" : "s0", "type": "int" }, { "name" : "s1", "type": "float"}, {"name" : "s3", "type" : "list", "of" : "int"}, {"name":"s4", "type": [{"name":"fibz", "type":"int"}, {"name":"fubz", "type":"float"}]} ] }
 			]
 		}
 	)"_json;
+
+//	auto jlayout = R"(
+//		{
+//			"fields": [
+//				{ "name": "col0", "type": "int" },
+//				{ "name": "col1", "type": "float" },
+//				{ "name": "col2", "type": "list", "of" : "int" },
+//				{ "name": "col3", "type": "list", "of" : 
+//					[{ "name" : "foo", "type": "int"}, {"name" : "bar", "type": "float"}] 
+//				},
+//				{ "name": "col4", "type": [ { "name" : "s0", "type": "int" }, { "name" : "s1", "type": "float"}, {"name" : "s3", "type" : "list", "of" : "int"}, {"name":"s4", "type": "list", "of" : [{"name":"fibz", "type":"int"}, {"name":"fubz", "type":"float"}]} ] }
+//			]
+//		}
+//	)"_json;
 
 	std::shared_ptr<arrow::Table> table4 = generate_table4(jlayout);
 	write_parquet_file(*table4, "struct4.parquet");
