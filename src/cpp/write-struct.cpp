@@ -297,28 +297,6 @@ class Node {
 		}
         virtual ~Node() = default;
 
-		//virtual void fill(std::map<std::string, arrow::ArrayBuilder*> fill_map) {
-		//	std::stringstream key;
-		//	key << _name << "/";
-		//	if(_is_nested) {
-		//		_builder->Append();
-		//		for(size_t i = 0; i < _child_builders.size(); i++) {
-		//			_child_builders->Append(1);
-		//		}
-		//	}
-		//}
-
-        //virtual void fill(I val) {
-
-		//	if constexpr(std::is_integral<I>::value || std::is_floating_point<I>::value) {
-		//		check_result(_builder->Append(val));
-		//	} else
-		//	if constexpr(std::is_array<I>::value || is_std_vector<I>::value) {
-		//		check_result(_builder->Append());
-		//		check_result(_builder->AppendValues(val));
-		//	} else 
-		//	}
-        //};
         void finish() {
             PARQUET_THROW_NOT_OK(_builder->Finish(_array));
         }
@@ -347,6 +325,8 @@ std::map<std::string, arrow::ArrayBuilder*>& out_map) {
 
 	auto type = builder->type();
 	if(builder->num_children() > 0) {
+		std::string struct_builder_name = parentname + "/";
+		out_map[struct_builder_name] = builder;
 		for(size_t ichild = 0; ichild < builder->num_children(); ichild++) {
 			auto field = type->field(ichild);
 			auto child_builder = builder->child_builder(ichild).get();
@@ -365,6 +345,7 @@ std::map<std::string, arrow::ArrayBuilder*>& out_map) {
 				auto item_builder = list_builder->value_builder();
 				//std::cout << "BUTTS list_builder = " << list_builder << std::endl;
 				//std::cout << "BUTTS item_builder = " << item_builder << std::endl;
+				std::cout << "FOO CREATING LIST INSIDE OF STRUCT: parentname = " << parentname << ", fieldname = " << field->name() << std::endl;
 				std::string outname = parentname + "/" + field->name();
 				std::string list_name = outname + "/list";
 				std::string val_name = outname + "/item";
@@ -401,12 +382,23 @@ std::map<std::string, arrow::ArrayBuilder*>
 makeVariableMap(std::shared_ptr<Node<T>> inode) {
 	auto builder = inode->builder();
 	std::map<std::string, arrow::ArrayBuilder*> out_map;
+	//makeVariableMap(builder, inode->name(), "", out_map);
 	makeVariableMap(builder, inode->name(), "", out_map);
 	return out_map;
 }
 
 template<typename T>
 void fill(T val, arrow::ArrayBuilder* builder) {
+	if constexpr(std::is_integral<T>::value) {
+		std::cout << "FILLING INT" << std::endl;
+		auto int_builder = dynamic_cast<arrow::Int32Builder*>(builder);
+		PARQUET_THROW_NOT_OK(int_builder->Append(val));
+	} else
+	if constexpr(std::is_floating_point<T>::value) {
+		std::cout << "FILLING FLOAT" << std::endl;
+		auto float_builder = dynamic_cast<arrow::FloatBuilder*>(builder);
+		PARQUET_THROW_NOT_OK(float_builder->Append(val));
+	} else
 	if constexpr(is_std_vector<T>::value) {
 		auto list = dynamic_cast<arrow::ListBuilder*>(builder);
 		PARQUET_THROW_NOT_OK(list->Append());
@@ -469,9 +461,153 @@ void fillStruct(std::map<std::string, arrow::ArrayBuilder*> builders, std::strin
 //      bool u_bool;
 //    };
 
+namespace pu {
+
+	template<class T, class TypeList>
+	struct IsContainedIn;
+	
+	template<class T, class... Ts>
+	struct IsContainedIn<T, std::variant<Ts...>>
+	  : std::bool_constant<(... || std::is_same<T, Ts>{})>
+	{};
+
+
+	template <typename T>
+	class VariableFiller {
+		public :
+
+			VariableFiller() : _name("") {
+				static_assert(IsContainedIn<T, data_variant>::value, "Invalid type data_variant type specified!");
+			}
+			VariableFiller& setName(std::string name) {
+				_name = name;
+				return *this;
+			}
+
+			VariableFiller& setBuilder(arrow::ArrayBuilder* builder) {
+				_builder = builder;
+
+				return *this;
+			}
+			void appendToBuilder() {
+				if constexpr(std::is_integral<T>::value) {
+					
+					auto tmp = dynamic_cast<arrow::Int32Builder*>(_builder);
+					PARQUET_THROW_NOT_OK(tmp->Append(getValue()));
+					
+				} else
+				if constexpr(std::is_floating_point<T>::value) {
+					auto tmp = dynamic_cast<arrow::FloatBuilder*>(_builder);
+					PARQUET_THROW_NOT_OK(tmp->Append(this->getValue()));
+				} else
+				if constexpr(is_std_vector<T>::value) {
+					auto tmp =  dynamic_cast<arrow::ListBuilder*>(_builder);
+					PARQUET_THROW_NOT_OK(tmp->Append());
+					typedef typename getType<T>::type InnerType;
+					if constexpr(std::is_integral<InnerType>::value) {
+						auto vb = dynamic_cast<arrow::Int32Builder*>(tmp);
+						PARQUET_THROW_NOT_OK(vb->AppendValues(getValue()));
+					} else
+					if constexpr(std::is_floating_point<InnerType>::value) {
+						auto vb = dynamic_cast<arrow::FloatBuilder*>(tmp);
+						PARQUET_THROW_NOT_OK(vb->AppendValues(getValue()));
+					} else {
+						throw std::runtime_error("FOOPS");
+					}
+				} else {
+					throw std::runtime_error("Bad type for VariableFiller::setBuilder");
+				}
+			}
+
+			void finish(std::shared_ptr<arrow::Array> array) {
+				PARQUET_THROW_NOT_OK(_builder->Finish(&array));
+			}
+
+			std::string getName() { return _name; }
+
+			data_variant& getBuffer() { return _buffer; }
+
+			VariableFiller& setValue(T val) {
+				_buffer = val;
+				return *this;
+			}
+
+
+			const T& getValue() { 
+				try {
+					return std::get<T>(_buffer);
+				} catch (std::bad_variant_access&) {
+					std::stringstream sx;
+					sx << "VariableFiller \"" << _name << "\" does not hold value with type \"" << typeid(T).name();
+					throw std::runtime_error(sx.str());
+				}
+			}
+
+			VariableFiller& operator << (T val) {
+				_buffer = val;
+				return *this;
+			}
+
+		private :
+			std::string _name;
+			data_variant _buffer;
+			arrow::ArrayBuilder* _builder;
+	};
+
+ 	typedef std::variant<VariableFiller<int>, 
+							VariableFiller<float>,
+							VariableFiller<std::vector<int>>
+						> var_filler_t;
+
+
+	class StructFiller {
+
+		public :
+			StructFiller() {}
+			void setName(std::string& name) { _name = name; }
+			void setField(std::vector<std::string> field_names) {
+				_field_names = field_names;
+			}
+
+			void setBuilder(arrow::ArrayBuilder* builder) {
+				_struct_builder = builder;
+			}
+
+			template <typename T>
+			void loadFieldBuilder(std::string& field_name, arrow::ArrayBuilder* builder) {
+				VariableFiller<T> filler;
+				filler.setName(field_name);
+				filler.setBuilder(builder);
+
+				_field_names.push_back(field_name);
+				_fillers.push_back(filler);
+			}
+
+			void appendToBuilder(std::vector<data_variant>) {
+			}
+
+
+		private :
+			std::string _name;
+			std::vector<std::string> _field_names;
+			arrow::ArrayBuilder* _struct_builder;
+			std::map<std::string, arrow::ArrayBuilder*> _field_builder_map;
+			std::vector<data_variant> _buffer_vec;
+
+			std::vector<var_filler_t> _fillers;
+	}; // StructFiller
+
+	typedef std::variant<var_filler_t, StructFiller> filler_t;
+	
+};
+
 std::map<std::string, std::map<std::string, arrow::ArrayBuilder*>>
 //std::tuple<std::shared_ptr<arrow::ArrayBuilder>, std::map<std::string, std::shared_ptr<arrow::ArrayBuilder>>>
 create_struct_builder() {
+
+
+	
+
 //std::shared_ptr<arrow::ArrayBuilder> create_struct_builder() {
 
     // create the inner struct
@@ -486,10 +622,10 @@ create_struct_builder() {
         arrow::field("baz", arrow::list(arrow::int32())),
 		arrow::field("inner_struct", arrow::struct_(
 										{
-										 arrow::field("inner-val", arrow::int32()),
+										 arrow::field("inner_val", arrow::int32()),
 										 arrow::field("inner_struct2", 
 															arrow::struct_(
-																{arrow::field("inner-val2", arrow::float64())}
+																{arrow::field("inner_val2", arrow::float32())}
 															)
 													  )
 										}
@@ -509,14 +645,14 @@ create_struct_builder() {
 //	float_node->createBuilder();
 	auto intlist_node = std::make_shared<Node<std::vector<int32_t>>>("MyListIntNode");
 	intlist_node->createBuilder();
-	auto floatlist_node = std::make_shared<Node<std::vector<float>>>("MyListFloatNode");
+	auto floatlist_node = std::make_shared<Node<std::vector<float>>>("MyFloatListNode");
 	floatlist_node->createBuilder();
 
 	auto int_node_map = makeVariableMap(int_node);
-	builder_map["MyIntNode"] = int_node_map;
+	builder_map["col1"] = int_node_map;
 
 	auto float_list_node_map = makeVariableMap(floatlist_node);
-	builder_map["MyFloatNode"] = float_list_node_map;
+	builder_map["col0"] = float_list_node_map;
 
 	std::cout << "------- INT NODE MAP -------" << std::endl;
 	for(const auto& [key, val] : int_node_map) {
@@ -528,6 +664,7 @@ create_struct_builder() {
 	auto struct_node = std::make_shared<Node<arrow::StructType>>("MyStructNode");
 	struct_node->createBuilder(type_struct);
 	auto struct_node_map = makeVariableMap(struct_node);
+	builder_map["col3"] = struct_node_map;
 	std::cout << "------- STRUCT NODE MAP -------" << std::endl;
 	for(const auto& [key, val] : struct_node_map) {
 		auto builder = dynamic_cast<arrow::ArrayBuilder*>(val);
@@ -545,31 +682,31 @@ create_struct_builder() {
 		std::cout << "							-> type: " << val->type()->name() << std::endl;
 	}
 
-	std::vector<float> float_vals{1.2, 3.4, 7.9};
-	fill<std::vector<float>>(float_vals, float_list_node_map.at("MyListFloatNode/list"));
 
 //void fillStruct(std::map<std::string, arrow::ArrayBuilder*> builders, std::string struct_name,
 //	const std::map<std::string, data_buffer_t>& val_map) {
 
-	std::map<std::string, data_variant> struct_vals;
-	data_variant val;
-	val = 32;
-	struct_vals["inner-val"] = val;
-	std::visit(DataVariantVisitor{}, struct_vals["inner-val"]);
-	fillStruct(struct_node_map, "MyStructNode/inner_struct/", struct_vals);
-
-	float float_val = 32.07;
-	val = float_val;
-	struct_vals["inner-val"] = val;
-	std::visit(DataVariantVisitor{}, struct_vals["inner-val"]);
-	fillStruct(struct_node_map, "MyStructNode/inner_struct/", struct_vals);
-
-	std::vector<int> intvec_val{1,2,3,4};
-	struct_vals["inner-val"] = intvec_val;
-	std::visit(DataVariantVisitor{}, struct_vals["inner-val"]);
-	fillStruct(struct_node_map, "MyStructNode/inner_struct/", struct_vals);
+//	std::map<std::string, data_variant> struct_vals;
+//	data_variant val;
+//	val = 32;
+//	struct_vals["inner_val"] = val;
+//	std::visit(DataVariantVisitor{}, struct_vals["inner_val"]);
+//	fillStruct(struct_node_map, "MyStructNode/inner_struct/", struct_vals);
+//
+//	float float_val = 32.07;
+//	val = float_val;
+//	struct_vals["inner_val"] = val;
+//	std::visit(DataVariantVisitor{}, struct_vals["inner_val"]);
+//	fillStruct(struct_node_map, "MyStructNode/inner_struct/", struct_vals);
+//
+//	std::vector<int> intvec_val{1,2,3,4};
+//	struct_vals["inner_val"] = intvec_val;
+//	std::visit(DataVariantVisitor{}, struct_vals["inner_val"]);
+//	fillStruct(struct_node_map, "MyStructNode/inner_struct/", struct_vals);
 	
-
+	//pu::VariableFiller<int> fillerInt;
+	//fillerInt.setName("intVal").setBuilder(int_node_map["MyIntNode"]).setValue(19).appendToBuilder();
+	//std::cout << "fillerInt = " << fillerInt.getValue() << std::endl;
 
 
 	//dynamic_cast<arrow::ListBuilder*>(struct_node_map["MyStructNode/baz/list"])->Append();
@@ -633,11 +770,14 @@ create_struct_builder() {
 //
 //}
 
-//std::shared_ptr<arrow::Table> generate_table3() {
-void generate_table3() {
+std::shared_ptr<arrow::Table> generate_table3() {
+//void generate_table3() {
 
     //auto [struct_builder, struct_field_map] = create_struct_builder();
 	auto builder_map = create_struct_builder();
+	std::cout << "======================================" << std::endl;
+	std::cout << "======================================" << std::endl;
+	std::cout << "======================================" << std::endl;
 	size_t n_columns = builder_map.size();
 	std::cout << "Total number of columns in schema: " << n_columns << std::endl;
 	size_t col_num = 0;
@@ -646,10 +786,98 @@ void generate_table3() {
 		for(const auto& [var_name, builder] : col_builder_map) {
 			std::cout << "			-> var " << var_name << std::endl;
 		}
+		col_num++;
 	}
 	//fill_struct(builder_map);
     ////fill_struct(struct_builder, struct_field_map);
-    std::vector<arrow::Array> arrays;
+
+
+	//
+	// fill some dummy values
+	//
+
+	std::vector<float> float_list_vals = {1.5, 2.5, 3.5};
+	std::vector<int> int_list_vals = {1,2,3};
+	
+
+	for(size_t i = 0; i < 2; i++) {
+		if(i>0) {
+			float_list_vals.push_back(19.3);
+			int_list_vals.push_back(88);
+		}
+
+		//
+		// float list
+		//
+		fill<std::vector<float>>(float_list_vals, builder_map.at("col0").at("MyFloatListNode/list"));
+
+		//
+		// int node
+		// 
+		fill<int>(42, builder_map.at("col1").at("MyIntNode"));
+
+		// MyStructNode/bar = float
+		// MyStructNode/baz/list = list of int
+		// MyStructNode/foo = int
+		// MyStructNode/inner_struct/inner_val = int
+		// MyStructNode/inner_struct/inner_struct2/inner_val2 = double
+
+		//
+		// fill struct
+		//
+		auto struct_node_builder = dynamic_cast<arrow::StructBuilder*>(builder_map["col3"]["MyStructNode/"]);
+		PARQUET_THROW_NOT_OK(struct_node_builder->Append());
+		fill<float>(42.73, builder_map.at("col3").at("MyStructNode/bar"));
+		fill<std::vector<int>>(int_list_vals, builder_map.at("col3").at("MyStructNode/baz/list"));
+		fill<int>(99, builder_map.at("col3").at("MyStructNode/foo"));
+
+		//
+		// fill inner struct
+		//
+		auto inner_struct_builder = dynamic_cast<arrow::StructBuilder*>(builder_map["col3"]["MyStructNode/inner_struct/"]);
+		check_result(inner_struct_builder->Append());
+		fill<int>(82, builder_map["col3"]["MyStructNode/inner_struct/inner_val"]);
+
+		//
+		// fill inner_struct2
+		//
+		auto inner_struct2_builder = dynamic_cast<arrow::StructBuilder*>(builder_map["col3"]["MyStructNode/inner_struct/inner_struct2/"]);
+		check_result(inner_struct2_builder->Append());
+		fill<float>(32.2, builder_map["col3"]["MyStructNode/inner_struct/inner_struct2/inner_val2"]);
+
+	}
+	
+	auto float_list_field = arrow::field("col0", arrow::list(arrow::float32()));
+	auto int_field = arrow::field("col1", arrow::int32());
+    std::vector fields{arrow::field("foo", arrow::int32()),
+        arrow::field("bar", arrow::float32()),
+        arrow::field("baz", arrow::list(arrow::int32())),
+		arrow::field("inner_struct", arrow::struct_(
+										{
+										 arrow::field("inner_val", arrow::int32()),
+										 arrow::field("inner_struct2", 
+															arrow::struct_(
+																{arrow::field("inner_val2", arrow::float32())}
+															)
+													  )
+										}
+									)
+					)
+    };
+	auto struct_field = arrow::field("col3", arrow::struct_(fields));
+	
+
+    std::vector<std::shared_ptr<arrow::Array>> array_vec;
+	std::shared_ptr<arrow::Array> array;
+	check_result(builder_map.at("col0").at("MyFloatListNode/list")->Finish(&array)); array_vec.push_back(array);
+	check_result(builder_map.at("col1").at("MyIntNode")->Finish(&array)); array_vec.push_back(array);
+	check_result(builder_map["col3"]["MyStructNode/"]->Finish(&array)); array_vec.push_back(array);
+
+	std::shared_ptr<arrow::Schema> schema;
+	schema = arrow::schema({float_list_field, int_field, struct_field});
+
+	return arrow::Table::Make(schema, array_vec);
+
 
 }
 
@@ -678,6 +906,7 @@ int main(int argc, char* argv[]) {
 
     //std::shared_ptr<arrow::Table> table2 = generate_table2();
     //write_parquet_file(*table2, "struct2.parquet");
-    generate_table3();
+    std::shared_ptr<arrow::Table> table3 = generate_table3();
+	write_parquet_file(*table3, "struct3.parquet");
     return 0;
 }
