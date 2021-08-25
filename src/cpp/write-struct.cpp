@@ -770,6 +770,14 @@ create_struct_builder() {
 //
 //}
 
+arrow::ListBuilder* to_list_builder(arrow::ArrayBuilder* builder) {
+	return dynamic_cast<arrow::ListBuilder*>(builder);
+}
+
+arrow::StructBuilder* to_struct_builder(arrow::ArrayBuilder* builder) {
+	return dynamic_cast<arrow::StructBuilder*>(builder);
+}
+
 std::shared_ptr<arrow::Table> generate_table3() {
 //void generate_table3() {
 
@@ -825,7 +833,7 @@ std::shared_ptr<arrow::Table> generate_table3() {
 		//
 		// fill struct
 		//
-		auto struct_node_builder = dynamic_cast<arrow::StructBuilder*>(builder_map["col3"]["MyStructNode/"]);
+		auto struct_node_builder = to_struct_builder(builder_map["col3"]["MyStructNode/"]);
 		PARQUET_THROW_NOT_OK(struct_node_builder->Append());
 		fill<float>(42.73, builder_map.at("col3").at("MyStructNode/bar"));
 		fill<std::vector<int>>(int_list_vals, builder_map.at("col3").at("MyStructNode/baz/list"));
@@ -834,14 +842,14 @@ std::shared_ptr<arrow::Table> generate_table3() {
 		//
 		// fill inner struct
 		//
-		auto inner_struct_builder = dynamic_cast<arrow::StructBuilder*>(builder_map["col3"]["MyStructNode/inner_struct/"]);
+		auto inner_struct_builder = to_struct_builder(builder_map["col3"]["MyStructNode/inner_struct/"]);
 		check_result(inner_struct_builder->Append());
 		fill<int>(82, builder_map["col3"]["MyStructNode/inner_struct/inner_val"]);
 
 		//
 		// fill inner_struct2
 		//
-		auto inner_struct2_builder = dynamic_cast<arrow::StructBuilder*>(builder_map["col3"]["MyStructNode/inner_struct/inner_struct2/"]);
+		auto inner_struct2_builder = to_struct_builder(builder_map["col3"]["MyStructNode/inner_struct/inner_struct2/"]);
 		check_result(inner_struct2_builder->Append());
 		fill<float>(32.2, builder_map["col3"]["MyStructNode/inner_struct/inner_struct2/inner_val2"]);
 
