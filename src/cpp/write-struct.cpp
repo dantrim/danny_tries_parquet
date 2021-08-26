@@ -1,5 +1,6 @@
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <string>
 #include <memory>
 #include <stdint.h>
@@ -67,32 +68,66 @@ std::vector<std::shared_ptr<arrow::Field>> fields_from_json(const json& jlayout)
 		auto field_name = jfield.at("name").get<std::string>();
 		std::cout << "FOO field_name = " << field_name << std::endl;
 		auto field_type = jfield.at("type");
+        std::cout << "jfield:" << std::endl;
+        std::cout << std::setw(4) << jfield.dump() << std::endl;
 		if(field_type.is_string()) {
+
+            //
+            // list
+            //
 			if(field_type == "list") {
-				auto list_value_type = jfield.at("of");
-				if(list_value_type.is_string()) {
-					fields.push_back(arrow::field(field_name, arrow::list(data_type_from_string(list_value_type.get<std::string>()))));
-				} else
-				if(list_value_type.is_array()) {
-					json jstruct;
-					jstruct["fields"] = list_value_type;
-					auto struct_fields = fields_from_json(jstruct);
-					auto list_type = arrow::list(arrow::struct_(struct_fields));
-					fields.push_back(arrow::field(field_name, list_type));
-				}
-			} else {
-				fields.push_back(arrow::field(field_name, data_type_from_string(field_type)));
-			}
-			
-		} else
-		if(field_type.is_array()) {
-			json jstruct;
-			jstruct["fields"] = field_type;
-			auto struct_fields = fields_from_json(jstruct);
-			auto struct_type = arrow::struct_(struct_fields);
-			fields.push_back(arrow::field(field_name, struct_type));
-		}
-	}
+                auto jcontains = jfield.at("contains");
+                std::cout << "jcontains: " << jcontains.dump() << std::endl;
+                auto value_type = jcontains.at("type").get<std::string>();
+
+                // list of lists
+                if(value_type == "list") {
+                    auto jcontains2 = jcontains.at("contains");
+                    std::cout << "jcontains2 = " << jcontains2.dump() << std::endl;
+                    auto value_type2 = jcontains2.at("type").get<std::string>();
+                    
+                    // list of list of lists (and that's it!)
+                    if(value_type2 == "list") {
+                        auto jcontains3 = jcontains2.at("contains");
+                        auto value_type3 = jcontains3.at("type").get<std::string>();
+
+                        if(value_type3 == "list") {
+                            std::stringstream err;
+                            err << "ERROR: Invalid list depth (>3) encountered for field with name \"" << field_name << "\"";
+                            throw std::runtime_error(err.str());
+                        } else
+                        if(value_type3 == "struct") {
+                            auto struct_fields = fields_from_json(jcontains3);
+                            auto end_list_type = arrow::struct_(struct_fields);
+                            fields.push_back(arrow::field(field_name, arrow::list(arrow::list(arrow::list(end_list_type)))));
+                        } else {
+                            fields.push_back(
+                                    arrow::field(field_name, arrow::list(arrow::list(arrow::list(data_type_from_string(value_type3))))));
+                        }
+                    } else if(value_type2 == "struct") {
+                        auto struct_fields = fields_from_json(jcontains2);
+                        auto end_list_type = arrow::struct_(struct_fields);
+                        fields.push_back(arrow::field(field_name, arrow::list(arrow::list(end_list_type))));
+                    } else {
+                        fields.push_back(arrow::field(field_name, arrow::list(arrow::list(data_type_from_string(value_type2)))));
+                    } 
+              } else if(value_type == "struct") {
+                  auto struct_fields = fields_from_json(jcontains);
+                  auto end_list_type = arrow::struct_(struct_fields);
+                  fields.push_back(arrow::field(field_name, arrow::list(end_list_type)));
+              } else {
+                  fields.push_back(arrow::field(field_name, arrow::list(data_type_from_string(value_type))));
+              }
+           } // list
+           else if(field_type == "struct") {
+               auto struct_fields = fields_from_json(jfield);
+               fields.push_back(arrow::field(field_name, arrow::struct_(struct_fields)));
+           } else {
+               fields.push_back(arrow::field(field_name, data_type_from_string(field_type)));
+           }
+       }
+    } // ifield
+
 	return fields;
 }
 
@@ -276,38 +311,44 @@ struct getType<std::vector<T, A>> {
 //      bool u_bool;
 //    };
 
-typedef std::variant<int, float, double, std::vector<int>, std::vector<float>> data_variant;
+typedef std::variant<
+                    int,
+                    float,
+                    double,
+                    std::vector<int>, std::vector<std::vector<int>>, std::vector<std::vector<std::vector<int>>>,
+                    std::vector<float>
+        > data_variant;
 typedef std::vector<data_variant> filler_vec;
 typedef std::variant<data_variant, filler_vec> fill_type_v;
 
-struct DataVariantVisitor
-{
-	void operator()(int i) const {
-		std::cout << "DataVariantVisitor -> int: " << i << std::endl;
-	}
-	void operator()(float f) const {
-		std::cout << "DataVariantVisitor -> float: " << f << std::endl;
-	}
-	void operator()(double f) const {
-		std::cout << "DataVariantVisitor -> double: " << f << std::endl;
-	}
-	void operator()(std::vector<int> v) {
-		std::cout << "DataVariantVisitor -> vector<int>: ";
-		std::stringstream sx;
-		for(const auto& x : v) {
-			sx << " " << x;
-		}
-		std::cout << sx.str() << std::endl;
-	}
-	void operator()(std::vector<float> v) {
-		std::cout << "DataVariantVisitor -> vector<float>: ";
-		std::stringstream sx;
-		for(const auto& x : v) {
-			sx << " " << x;
-		}
-		std::cout << sx.str() << std::endl;
-	}
-};
+//struct DataVariantVisitor
+//{
+//	void operator()(int i) const {
+//		std::cout << "DataVariantVisitor -> int: " << i << std::endl;
+//	}
+//	void operator()(float f) const {
+//		std::cout << "DataVariantVisitor -> float: " << f << std::endl;
+//	}
+//	void operator()(double f) const {
+//		std::cout << "DataVariantVisitor -> double: " << f << std::endl;
+//	}
+//	void operator()(std::vector<int> v) {
+//		std::cout << "DataVariantVisitor -> vector<int>: ";
+//		std::stringstream sx;
+//		for(const auto& x : v) {
+//			sx << " " << x;
+//		}
+//		std::cout << sx.str() << std::endl;
+//	}
+//	void operator()(std::vector<float> v) {
+//		std::cout << "DataVariantVisitor -> vector<float>: ";
+//		std::stringstream sx;
+//		for(const auto& x : v) {
+//			sx << " " << x;
+//		}
+//		std::cout << sx.str() << std::endl;
+//	}
+//};
 
 
 template <typename I>
@@ -723,10 +764,10 @@ void fill2(std::string node, std::map<std::string, arrow::ArrayBuilder*> builder
 			// here we have a vector of potentially different-typed fields,
 			// so we are filling a struct
 			std::cout << "FOO fill2 got std::vector<data_variant> with " << field_data_vec.size() << " fields\n";
-			for(const auto& x : field_data_vec) {
-				std::cout << "FOO fill2 calling DataVariantVisitor" << std::endl;
-				std::visit(DataVariantVisitor{}, x);
-			}
+			//for(const auto& x : field_data_vec) {
+			//	std::cout << "FOO fill2 calling DataVariantVisitor" << std::endl;
+			//	std::visit(DataVariantVisitor{}, x);
+			//}
 
 			if(builder_type->id() != arrow::Type::STRUCT) {
 				throw std::runtime_error("ERROR fill2 expect builder type to be struct, got: " + builder_type->name());
@@ -1381,6 +1422,8 @@ std::shared_ptr<arrow::Table> generate_table4(const json& jlayout) {
 		filler_vec struct_data{1, floatval, intvec_vals};
 		fill2("col4", col_builder_map.at("col4"), {struct_data});
 		fill2("col4/s4", col_builder_map.at("col4"), {structlist_data.at(0)});
+
+        // col5
 	}
 
 	std::vector<std::shared_ptr<arrow::Array>> array_vec;
@@ -1427,33 +1470,46 @@ int main(int argc, char* argv[]) {
     //std::shared_ptr<arrow::Table> table3 = generate_table3();
 	//write_parquet_file(*table3, "struct3.parquet");
 
-	auto jlayout = R"(
-		{
-			"fields": [
-				{ "name": "col0", "type": "int" },
-				{ "name": "col1", "type": "float" },
-				{ "name": "col2", "type": "list", "of" : "int" },
-				{ "name": "col3", "type": "list", "of" : 
-					[{ "name" : "foo", "type": "int"}, {"name" : "bar", "type": "float"}] 
-				},
-				{ "name": "col4", "type": [ { "name" : "s0", "type": "int" }, { "name" : "s1", "type": "float"}, {"name" : "s3", "type" : "list", "of" : "int"}, {"name":"s4", "type": [{"name":"fibz", "type":"int"}, {"name":"fubz", "type":"float"}]} ] }
-			]
-		}
-	)"_json;
-
 //	auto jlayout = R"(
 //		{
 //			"fields": [
 //				{ "name": "col0", "type": "int" },
 //				{ "name": "col1", "type": "float" },
-//				{ "name": "col2", "type": "list", "of" : "int" },
-//				{ "name": "col3", "type": "list", "of" : 
+//				{ "name": "col2", "type": "list", "contains" : { "type": "int" } },
+//				{ "name": "col3", "type": "list", "contains" : { "type" : "struct",
+//                    "fields": 
 //					[{ "name" : "foo", "type": "int"}, {"name" : "bar", "type": "float"}] 
+//                    }
 //				},
-//				{ "name": "col4", "type": [ { "name" : "s0", "type": "int" }, { "name" : "s1", "type": "float"}, {"name" : "s3", "type" : "list", "of" : "int"}, {"name":"s4", "type": "list", "of" : [{"name":"fibz", "type":"int"}, {"name":"fubz", "type":"float"}]} ] }
+//				{ "name": "col4", "type": "struct", "fields" : [ { "name" : "s0", "type": "int" }, { "name" : "s1", "type": "float"}, {"name" : "s3", "type" : "list", "contains" : {"type":"int"}}, {"name":"s4", "type": "struct", "fields": [{"name":"fibz", "type":"int"}, {"name":"fubz", "type":"float"}]} ] },
+//                { "name": "col5", "type": "list", "contains" :
+//                    {
+//                        "type": "int"
+//                    }
+//                },
+//                {
+//                    "name": "col6", "type": "list", "contains" : {"type": "list", "contains" : {"type": "int"}}
+//                }
 //			]
 //		}
 //	)"_json;
+
+	auto jlayout = R"(
+		{
+			"fields": [
+				{ "name": "col0", "type": "int" },
+				{ "name": "col1", "type": "float" },
+				{ "name": "col2", "type": "list", "contains" : { "type": "int" } },
+				{ "name": "col3", "type": "list", "contains" : { "type" : "struct",
+                    "fields": 
+					[{ "name" : "foo", "type": "int"}, {"name" : "bar", "type": "float"}] 
+                    }
+				},
+				{ "name": "col4", "type": "struct", "fields" : [ { "name" : "s0", "type": "int" }, { "name" : "s1", "type": "float"}, {"name" : "s3", "type" : "list", "contains" : {"type":"int"}}, {"name":"s4", "type": "struct", "fields": [{"name":"fibz", "type":"int"}, {"name":"fubz", "type":"float"}]} ] }
+			]
+		}
+	)"_json;
+
 
 	std::shared_ptr<arrow::Table> table4 = generate_table4(jlayout);
 	write_parquet_file(*table4, "struct4.parquet");
